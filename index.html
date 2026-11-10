@@ -379,8 +379,8 @@ function camStatus(t) { $("camStatus").textContent = t; }
 async function ensureModel() {
   if (landmarker) return;
   if (window.__fakePose) { landmarker = window.__fakePose; return; }   // test hook: lets the counting loop be exercised without a camera model
-  const { PoseLandmarker, FilesetResolver } = await import("./lib/vision_bundle.mjs");
-  const files = await FilesetResolver.forVisionTasks("./lib/wasm");
+  const { PoseLandmarker, FilesetResolver } = await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs");
+  const files = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
   const make = delegate => PoseLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: "VIDEO", numPoses: 1 });
   try { landmarker = await make("GPU"); } catch (e) { landmarker = await make("CPU"); }
 }
