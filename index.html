@@ -119,6 +119,7 @@ select, input[type="number"] { font: inherit; color: var(--ink); background: var
 .live { position: absolute; left: 16px; right: 16px; top: calc(76px + env(safe-area-inset-top, 0px)); display: flex; flex-direction: column; gap: 8px; pointer-events: none; text-shadow: 0 1px 6px #000; }
 .lrow { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .lbar { grid-column: 1 / -1; position: relative; height: 12px; border-radius: 6px; background: #FFFFFF2E; overflow: hidden; }
+.lbar.big { height: 18px; border-radius: 9px; }
 .lbar i, .lbar b, .lbar u { position: absolute; top: 0; bottom: 0; transition: left .4s, width .4s; }
 .lbar i { left: 0; background: #86A9EA; }
 .lbar b { background: #4FC58D; }
@@ -154,7 +155,7 @@ select, input[type="number"] { font: inherit; color: var(--ink); background: var
   <section aria-labelledby="h-ledger">
     <h2 id="h-ledger">Body parts</h2>
     <div class="ledger" id="ledger"></div>
-    <p class="legend">Counted in hard sets: a set ending 1–3 reps short of failure counts in full, 4–5 short counts half, easier sets don't count. The tick marks the minimum to hold on to muscle; a full bar is your weekly goal.</p>
+    <p class="legend">Counted in hard sets. With the camera, each rep adds a little and credit climbs as the set gets hard, up to one full set. Entered by hand, a set ending 1–3 reps short of failure counts in full, 4–5 short counts half, and easier sets don't count. The tick marks the minimum to hold on to muscle; a full bar is your weekly goal.</p>
   </section>
 
   <section aria-labelledby="h-next">
@@ -242,7 +243,7 @@ select, input[type="number"] { font: inherit; color: var(--ink); background: var
 <div class="toast" id="toast" hidden role="status"><span id="toastMsg"></span><button id="toastUndo" hidden>Undo</button></div>
 
 <script type="module">
-import { MUSCLES, EXERCISES, EFFORTS, SIGNALS, sideSignal, makeCounter, estimateEffort, setCredits, totals } from "./core.js";
+import { MUSCLES, EXERCISES, EFFORTS, SIGNALS, sideSignal, makeCounter, liveCredit, setCredits, totals } from "./core.js";
 
 const M = Object.fromEntries(MUSCLES.map(m => [m.id, m]));
 const E = Object.fromEntries(EXERCISES.map(e => [e.id, e]));
@@ -342,7 +343,7 @@ function render() {
       const r = el("div", "set"), ex = E[s.ex];
       r.appendChild(el("div", "ex", ex ? ex.name : s.ex));
       const cr = setCredits(s), parts = Object.keys(cr).filter(m => cr[m] > 0).map(m => M[m].name + " " + frac(cr[m]));
-      r.appendChild(el("div", "meta", (EF[s.rir] || EF.easy).label + (s.src === "cam" ? " · camera" : "") + (parts.length ? " · " + parts.join(", ") : " · not counted")));
+      r.appendChild(el("div", "meta", (s.k != null ? Math.round(s.k * 100) + "% credit" : (EF[s.rir] || EF.easy).label) + (s.src === "cam" ? " · camera" : "") + (parts.length ? " · " + parts.join(", ") : " · not counted")));
       r.appendChild(el("div", "qty num", s.reps + " × " + (s.load ? s.load + " lb" : "body")));
       const d = el("button", "del", "✕"); d.type = "button"; d.setAttribute("aria-label", "Delete this set"); d.addEventListener("click", () => removeSet(s.id)); r.appendChild(d);
       box.appendChild(r);
@@ -425,8 +426,8 @@ function beginSet() {
   const amp = SIGNALS[cam.ex.sig].minAmp;
   cam.counters = { L: makeCounter(amp), R: makeCounter(amp) };
   cam.goAt = performance.now() + 5000; cam.said = 0; cam.lastSeen = 0; cam.count = 0;
-  cam.base = totals((weeks[weekKey(new Date())] || { sets: [] }).sets); cam.level = 0;
-  renderLive(null, "The striped part is what this set can add. It fills in as the set gets hard.");
+  cam.base = totals((weeks[weekKey(new Date())] || { sets: [] }).sets); cam.level = 0; cam.k = 0; cam.why = "creep"; cam.best = bestReps(cam.ex.id, cam.load);
+  renderLive(0, cam.best ? "Your best hard set at this weight is " + cam.best + " reps. Credit climbs as you get close." : "Each rep adds a little. It climbs faster once the set gets hard.");
   phase = "countdown"; showCounting(); $("camCount").textContent = "0"; say("Get set");
 }
 function showCounting() { $("result").hidden = true; $("barResult").hidden = true; $("barCounting").hidden = false; $("camCount").hidden = false; $("camStatus").hidden = false; clearInterval(restTimer); }
@@ -461,9 +462,10 @@ function loop(now) {
   const n = Math.max(cam.counters.L.count, cam.counters.R.count);
   if (n !== cam.count) {
     cam.count = n; $("camCount").textContent = n;
-    const best = cam.counters.R.count > cam.counters.L.count ? cam.counters.R : cam.counters.L, est = estimateEffort(best.reps), eff = est ? est.effort : null;
-    renderLive(eff, n < 5 ? "Effort shows from rep 5." : eff === "hard" ? "Full credit earned." : eff === "mod" ? "Half credit earned. Push for full." : "Not counting yet. Keep going until your reps slow down.");
-    if (n > cam.said) { cam.said = n; let phrase = String(n); const lvl = creditLevel(eff); if (lvl > cam.level) { cam.level = lvl; phrase += lvl === 1 ? ". Full credit" : ". Half credit"; } say(phrase); }
+    const bc = cam.counters.R.count > cam.counters.L.count ? cam.counters.R : cam.counters.L, lc = liveCredit(bc.reps, cam.best);
+    if (lc.k > cam.k) { cam.k = lc.k; cam.why = lc.why; }      // the bar only ever moves forward within a set
+    renderLive(cam.k, cam.k >= 1 ? "Full credit earned." : cam.why === "creep" ? "Each rep adds a little. It climbs faster once the set gets hard." : cam.k >= 0.5 ? "Over half credit. Push for full." : "It's getting hard. Keep going.");
+    if (n > cam.said) { cam.said = n; let phrase = String(n); const lvl = cam.k >= 1 ? 1 : cam.k >= 0.5 ? 0.5 : 0; if (lvl > cam.level) { cam.level = lvl; phrase += lvl === 1 ? ". Full credit" : ". Half credit"; } say(phrase); }
   }
   camStatus(seen ? (n ? "Counting" : "Go when ready") : "Lost sight of you. Step back into the picture.");
   // The set ends by itself after 6 seconds without a rep, or 6 seconds out of view.
@@ -475,14 +477,23 @@ function loop(now) {
 // Live view of this week's bars for the muscles this exercise works: blue = already done this week,
 // green = earned by this set so far, striped = what this set can still earn.
 function creditLevel(e) { return e === "hard" || e === "fail" ? 1 : e === "mod" ? 0.5 : 0; }
-function renderLive(effort, note) {
-  const host = $("live"), k = creditLevel(effort); host.textContent = "";
+// Best rep count in a recent hard set of this exercise at this weight; used to judge how close a set is to its limit.
+function bestReps(exId, load) {
+  const since = Date.now() - 42 * 864e5; let b = 0;
+  for (const w of Object.values(weeks)) for (const s of w.sets)
+    if (s.ex === exId && s.load === load && s.t >= since && (s.k != null ? s.k : (EF[s.rir] || EF.easy).credit) >= 0.75 && s.reps > b) b = s.reps;
+  return b || null;
+}
+function renderLive(k, note) {
+  const host = $("live"); host.textContent = "";
+  const top = el("div", "lrow"), tb = el("div", "lbar big"), tf = el("b"); tf.style.left = "0"; tf.style.width = (k * 100) + "%"; tb.appendChild(tf);
+  top.append(el("span", "", "This set"), el("span", "", Math.round(k * 100) + "% of a full set"), tb); host.appendChild(top);
   for (const m in cam.ex.c) {
     const mu = M[m], full = cam.ex.c[m], base = cam.base[m];
     const p0 = Math.min(100, base / mu.goal * 100), earned = Math.min(100 - p0, full * k / mu.goal * 100), pot = Math.min(100 - p0 - earned, full * (1 - k) / mu.goal * 100);
     const row = el("div", "lrow"), bar = el("div", "lbar"), a = el("i"), b = el("b"), u = el("u");
     a.style.width = p0 + "%"; b.style.left = p0 + "%"; b.style.width = earned + "%"; u.style.left = (p0 + earned) + "%"; u.style.width = pot + "%";
-    const now = Math.round((base + full * k) / mu.goal * 100), max = Math.round((base + full) / mu.goal * 100);
+    const now = ((base + full * k) / mu.goal * 100).toFixed(1), max = ((base + full) / mu.goal * 100).toFixed(1);
     bar.append(a, b, u); row.append(el("span", "", mu.name), el("span", "", k < 1 ? now + "% → " + max + "%" : now + "%"), bar); host.appendChild(row);
   }
   host.appendChild(el("div", "lnote", note || ""));
@@ -492,17 +503,21 @@ function finishSet() {
   const cs = cam.counters; cs.L.flush(); cs.R.flush();
   const best = cs.R.count > cs.L.count ? cs.R : cs.L, reps = best.count;
   if (!reps) { stopCamera(); toast("No reps were counted, so nothing was saved."); return; }
-  const est = estimateEffort(best.reps), prev = (last[cam.ex.id] || {}).rir;
-  const rir = est ? est.effort : (prev || "hard");
-  const s = { id: newId(), t: Date.now(), ex: cam.ex.id, reps, load: cam.load, rir, src: "cam" };
+  const lc = liveCredit(best.reps, cam.best); let k = cam.k, why = cam.why, assumed = false;
+  if (lc.k > k) { k = lc.k; why = lc.why; }
+  // A short set with no earlier hard set to compare against can't be judged, so it counts as hard until corrected.
+  if (reps < 5 && !cam.best && k < 1) { k = 1; assumed = true; }
+  k = Math.round(k * 100) / 100;
+  const rir = k >= 0.75 ? "hard" : k >= 0.25 ? "mod" : "easy";
+  const s = { id: newId(), t: Date.now(), ex: cam.ex.id, reps, load: cam.load, rir, k, src: "cam" };
   addSet(s); savedId = s.id; lastEx = s.ex;
   phase = "result";
   $("camCount").hidden = true; $("camStatus").hidden = true; $("barCounting").hidden = true; $("barResult").hidden = false; $("result").hidden = false;
   $("resTitle").textContent = "Set saved: " + cam.ex.name;
-  $("resReps").value = reps; setRadio("resrir", rir); renderLive(rir, "");
-  $("resHint").textContent = est
-    ? "Effort is my estimate: your last reps took " + Math.round((est.ratio - 1) * 100) + "% longer than your early ones. Tap to correct it. The camera can't tell a hard set from failure."
-    : "Too few reps to judge effort from speed, so I used " + (prev ? "your last answer for this exercise" : "Hard") + ". Tap to correct it.";
+  $("resReps").value = reps; setRadio("resrir", rir); renderLive(k, "");
+  $("resHint").textContent = assumed
+    ? "First short set of this exercise at this weight, so I counted it as a full hard set and will use it as your reference next time. Tap an effort level to correct it."
+    : "Counted as " + Math.round(k * 100) + "% of a hard set, based on " + (why === "rir" ? "how close you came to your best of " + cam.best + " reps" : why === "slow" ? "how much your reps slowed" : "rep count alone, since your reps didn't slow") + ". Tap an effort level to override it.";
   say("Set saved. " + reps + (reps === 1 ? " rep" : " reps"));
   restFrom = Date.now(); clearInterval(restTimer);
   const tick = () => { const sec = Math.floor((Date.now() - restFrom) / 1000); $("restClock").textContent = "Rest " + Math.floor(sec / 60) + ":" + pad(sec % 60); };
@@ -529,7 +544,7 @@ async function importData(file) {
     let added = 0;
     for (const k in d.weeks) { if (!/^w_\d{4}-\d{2}-\d{2}$/.test(k) || !Array.isArray(d.weeks[k].sets)) continue;
       const have = new Set(((weeks[k] ||= { sets: [] }).sets).map(s => s.id));
-      for (const s of d.weeks[k].sets) if (s && s.id && E[s.ex] && !have.has(s.id)) { weeks[k].sets.push({ id: String(s.id), t: Number(s.t), ex: s.ex, reps: Number(s.reps) || 1, load: Number(s.load) || 0, rir: EF[s.rir] ? s.rir : "hard", src: s.src === "cam" ? "cam" : undefined }); added++; } }
+      for (const s of d.weeks[k].sets) if (s && s.id && E[s.ex] && !have.has(s.id)) { weeks[k].sets.push({ id: String(s.id), t: Number(s.t), ex: s.ex, reps: Number(s.reps) || 1, load: Number(s.load) || 0, rir: EF[s.rir] ? s.rir : "hard", k: typeof s.k === "number" ? Math.max(0, Math.min(1, s.k)) : null, src: s.src === "cam" ? "cam" : undefined }); added++; } }
     save(); render(); toast(added ? added + " sets restored from the backup." : "Nothing new in that backup.");
   } catch (e) { toast("That file isn't a Volume Ledger backup."); }
 }
@@ -562,7 +577,7 @@ $("flipCam").addEventListener("click", async () => { prefs.facing = prefs.facing
 $("resMinus").addEventListener("click", () => { const v = Math.max(1, (parseInt($("resReps").value, 10) || 1) - 1); $("resReps").value = v; editSaved({ reps: v }); });
 $("resPlus").addEventListener("click", () => { const v = Math.min(200, (parseInt($("resReps").value, 10) || 0) + 1); $("resReps").value = v; editSaved({ reps: v }); });
 $("resReps").addEventListener("change", () => { const v = parseInt($("resReps").value, 10); if (v >= 1) editSaved({ reps: v }); });
-$("resRir").addEventListener("change", () => { editSaved({ rir: radio("resrir") }); renderLive(radio("resrir"), ""); });
+$("resRir").addEventListener("change", () => { const r = radio("resrir"); editSaved({ rir: r, k: null }); renderLive(creditLevel(r), ""); });
 $("toastUndo").addEventListener("click", () => { if (undoFn) undoFn(); undoFn = null; $("toast").hidden = true; });
 $("prevWeek").addEventListener("click", () => { const d = keyDate(viewing); d.setDate(d.getDate() - 7); viewing = weekKey(d); render(); });
 $("nextWeek").addEventListener("click", () => { const d = keyDate(viewing); d.setDate(d.getDate() + 7); viewing = weekKey(d); render(); });
