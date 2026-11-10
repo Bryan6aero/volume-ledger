@@ -138,11 +138,31 @@ export function estimateEffort(reps) {
   return { ratio, effort: ratio >= 1.4 ? "hard" : ratio >= 1.2 ? "mod" : "easy" };
 }
 
+// ---------- Live credit ----------
+// How much of one hard set the reps so far are worth, from 0 to 1. It is the largest of three signals:
+//   creep: every rep adds 3%, up to a quarter of a set, so an easy set still counts a little
+//   slow:  how much the latest reps have slowed compared with the first ones
+//   rir:   how close the rep count is to the best recent hard set of this exercise at this weight
+export function slowdown(reps) {
+  const d = reps.slice(1).map((r, i) => r.mid - reps[i].mid);
+  if (d.length < 2) return null;
+  if (d.length < 4) return d[d.length - 1] / d[0];
+  const early = d.slice(0, 3).sort((a, b) => a - b)[1];
+  return (d[d.length - 1] + d[d.length - 2]) / 2 / early;
+}
+const clamp01 = x => Math.max(0, Math.min(1, x));
+export function liveCredit(reps, best) {
+  const n = reps.length, ratio = slowdown(reps);
+  const parts = { creep: Math.min(0.25, 0.03 * n), slow: ratio === null ? 0 : clamp01((ratio - 1.05) / 0.35), rir: best ? clamp01((6 - (best - n)) / 4) : 0 };
+  const why = Object.keys(parts).reduce((a, b) => parts[b] > parts[a] ? b : a, "creep");
+  return { k: n ? parts[why] : 0, why, ratio };
+}
+
 // ---------- Scoring ----------
 const E = Object.fromEntries(EXERCISES.map(e => [e.id, e]));
 const EF = Object.fromEntries(EFFORTS.map(e => [e.v, e]));
 export function setCredits(s) {
-  const ex = E[s.ex], k = (EF[s.rir] || EF.easy).credit, out = {};
+  const ex = E[s.ex], k = s.k != null ? s.k : (EF[s.rir] || EF.easy).credit, out = {};   // camera sets carry their own credit in s.k
   if (!ex) return out;
   for (const m in ex.c) out[m] = ex.c[m] * k;
   return out;
