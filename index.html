@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Weekly Volume Ledger</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#10151B">
+<style>
+/* Layout: one phone-width column. Body-part ledger first, then what to do next, then the set log. Start button pinned to the bottom edge. Camera counting takes over the full screen. */
+:root {
+  --bg: #EDF0F3; --surface: #FFFFFF; --ink: #16202A; --muted: #586675; --line: #D5DBE2;
+  --accent: #2B4C8C; --on-accent: #FFFFFF; --track: #DDE3EA;
+  --low: #B0531A; --mid: #4E6F9E; --good: #1C7A4C;
+  --display: "Segoe UI", Roboto, system-ui, sans-serif;
+  --body: Roboto, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #10151B; --surface: #19212B; --ink: #E7ECF1; --muted: #97A5B3; --line: #2B3644;
+  --accent: #86A9EA; --on-accent: #0E1620; --track: #263140;
+  --low: #E38D4E; --mid: #8FAAD0; --good: #4FC58D; color-scheme: dark } }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { padding-top: env(safe-area-inset-top, 0px); }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.45;
+  padding: 20px max(16px, env(safe-area-inset-right, 0px)) 120px max(16px, env(safe-area-inset-left, 0px)); }
+.wrap { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+h1, h2 { font-family: var(--display); margin: 0; text-wrap: balance; }
+h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, select:focus-visible, input:focus-visible, label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+
+.head { display: flex; flex-direction: column; gap: 6px; }
+.weeknav { display: flex; align-items: center; gap: 8px; }
+.weeknav h1 { flex: 1; min-width: 0; }
+.iconbtn { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font-size: 18px; line-height: 1; }
+.iconbtn:disabled { opacity: 0.35; cursor: default; }
+.summary { color: var(--muted); margin: 0; }
+
+section { display: flex; flex-direction: column; gap: 12px; }
+.ledger { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 4px 14px; }
+.row { padding: 12px 0; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: baseline; }
+.row:last-child { border-bottom: 0; }
+.row .name { font-weight: 600; min-width: 0; }
+.row .name small { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 6px; }
+.row .val { color: var(--muted); font-size: 13px; text-align: right; white-space: nowrap; }
+.row .val b { color: var(--ink); font-family: var(--display); font-size: 17px; font-weight: 600; margin-right: 6px; }
+.bar { grid-column: 1 / -1; position: relative; height: 10px; border-radius: 5px; background: var(--track); }
+.bar i { position: absolute; inset: 0 auto 0 0; border-radius: 5px; background: var(--state); }
+.bar s { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); opacity: 0.55; }
+.state { grid-column: 1 / -1; font-size: 12px; font-weight: 600; color: var(--state); }
+.is-low { --state: var(--low); } .is-mid { --state: var(--mid); } .is-good { --state: var(--good); }
+.legend { font-size: 12px; color: var(--muted); margin: 0; }
+
+.next { display: flex; flex-direction: column; gap: 8px; }
+.next button { text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; }
+.next button strong { font-weight: 600; }
+.next button span { grid-column: 1; font-size: 13px; color: var(--muted); }
+.next button em { grid-row: 1 / span 2; grid-column: 2; font-style: normal; color: var(--accent); font-weight: 600; font-size: 13px; }
+.empty { color: var(--muted); margin: 0; padding: 14px; border: 1px dashed var(--line); border-radius: 12px; }
+
+.day h3 { font: 600 13px var(--body); margin: 0 0 4px; color: var(--muted); }
+.set { display: grid; grid-template-columns: 1fr auto auto; gap: 2px 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.set .ex { font-weight: 500; min-width: 0; }
+.set .meta { grid-column: 1; font-size: 12px; color: var(--muted); }
+.set .qty { grid-row: 1 / span 2; grid-column: 2; font-size: 14px; white-space: nowrap; }
+.set .del { grid-row: 1 / span 2; grid-column: 3; width: 36px; height: 36px; border: 0; background: none; color: var(--muted); font-size: 18px; border-radius: 8px; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.ghost { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 14px; }
+
+.dock { position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg); border-top: 1px solid var(--line);
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.dock-in { max-width: 520px; margin: 0 auto; }
+.primary { width: 100%; border: 0; border-radius: 12px; background: var(--accent); color: var(--on-accent); font-family: var(--display); font-weight: 600; font-size: 17px; padding: 14px; }
+.secondary { width: 100%; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); font-weight: 600; padding: 12px; }
+
+.scrim { position: fixed; inset: 0; background: rgba(8, 12, 18, 0.55); display: flex; align-items: flex-end; justify-content: center; z-index: 20; }
+.sheet { background: var(--surface); color: var(--ink); width: 100%; max-width: 520px; max-height: 92%; overflow-y: auto; border-radius: 18px 18px 0 0;
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  display: flex; flex-direction: column; gap: 16px; }
+.sheet-top { display: flex; align-items: center; justify-content: space-between; }
+.sheet-top strong { font-family: var(--display); font-size: 19px; }
+.field { display: flex; flex-direction: column; gap: 6px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.field > span, .field > legend { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding: 0; }
+.field > legend { margin-bottom: 6px; }
+select, input[type="number"] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px; width: 100%; }
+.stepper { display: grid; grid-template-columns: 52px 1fr 52px; gap: 8px; }
+.stepper button { border: 1px solid var(--line); background: var(--bg); border-radius: 10px; font-size: 22px; }
+.stepper input { text-align: center; font-family: var(--display); font-size: 22px; font-weight: 600; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips label { flex: 1 1 auto; text-align: center; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+.chips label small { display: block; font-size: 11px; color: var(--muted); }
+.chips input { position: absolute; opacity: 0; pointer-events: none; }
+.chips label:has(input:checked) { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.chips label:has(input:checked) small { color: var(--on-accent); opacity: 0.85; }
+.hint { font-size: 13px; color: var(--muted); margin: 0; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.check input { width: 20px; height: 20px; }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(96px + env(safe-area-inset-bottom, 0px)); z-index: 60;
+  background: var(--ink); color: var(--bg); border-radius: 10px; padding: 10px 14px; display: flex; gap: 14px; align-items: center; max-width: calc(100% - 32px); font-size: 14px; }
+.toast button { border: 0; background: none; color: inherit; font-weight: 700; text-decoration: underline; padding: 0; }
+
+/* Camera view: always dark, whatever the theme, so the video and count read from across the room. */
+.cam { position: fixed; inset: 0; z-index: 40; background: #05080C; color: #F2F5F8; display: flex; flex-direction: column; }
+.stage { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.stage.mirror video, .stage.mirror canvas { transform: scaleX(-1); }
+.hud-top { position: absolute; left: 0; right: 0; top: 0; padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 24px; background: linear-gradient(#05080CCC, #05080C00); display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.hud-top strong { font-family: var(--display); font-size: 18px; display: block; }
+.hud-top span { font-size: 13px; opacity: 0.85; }
+.hud-top button { border: 1px solid #FFFFFF55; background: #05080C88; color: #F2F5F8; border-radius: 10px; padding: 8px 12px; white-space: nowrap; }
+.count { position: absolute; right: 16px; bottom: 16px; font-family: var(--display); font-weight: 700; font-size: min(38vw, 180px); line-height: 0.9; text-shadow: 0 2px 18px #000; font-variant-numeric: tabular-nums; }
+.status { position: absolute; left: 16px; bottom: 20px; max-width: 55%; font-size: 15px; font-weight: 600; text-shadow: 0 1px 8px #000; }
+.cam-bar { padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: flex; gap: 10px; background: #0C1218; }
+.cam-bar button { flex: 1; border-radius: 12px; padding: 14px; font-weight: 600; font-size: 16px; border: 1px solid #FFFFFF33; background: #19212B; color: #F2F5F8; }
+.cam-bar .go { background: #86A9EA; border-color: #86A9EA; color: #0E1620; flex: 2; }
+.result { background: #0C1218; padding: 16px max(16px, env(safe-area-inset-right, 0px)) 4px max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 12px; }
+.result .line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.result .line strong { font-family: var(--display); font-size: 20px; }
+.result .rest { font-variant-numeric: tabular-nums; opacity: 0.85; }
+.result .stepper button, .result .stepper input, .result .chips label { background: #19212B; border-color: #FFFFFF33; color: #F2F5F8; }
+.result .chips label small { color: #B6C2CE; }
+.result .chips label:has(input:checked) { background: #86A9EA; border-color: #86A9EA; color: #0E1620; }
+.result .chips label:has(input:checked) small { color: #0E1620; }
+.result .hint { color: #B6C2CE; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="head">
+    <div class="weeknav">
+      <button class="iconbtn" id="prevWeek" aria-label="Previous week">&#8249;</button>
+      <h1 id="weekTitle">This week</h1>
+      <button class="iconbtn" id="nextWeek" aria-label="Next week">&#8250;</button>
+    </div>
+    <p class="summary" id="summary"></p>
+  </header>
+
+  <section aria-labelledby="h-ledger">
+    <h2 id="h-ledger">Body parts</h2>
+    <div class="ledger" id="ledger"></div>
+    <p class="legend">Counted in hard sets: a set ending 1–3 reps short of failure counts in full, 4–5 short counts half, easier sets don't count. The tick marks the minimum to hold on to muscle; a full bar is your weekly goal.</p>
+  </section>
+
+  <section aria-labelledby="h-next">
+    <h2 id="h-next">Do next</h2>
+    <div class="next" id="next"></div>
+  </section>
+
+  <section aria-labelledby="h-log">
+    <h2 id="h-log">Sets this week</h2>
+    <div id="log"></div>
+  </section>
+
+  <section aria-labelledby="h-data">
+    <h2 id="h-data">Your data</h2>
+    <p class="legend">Everything is stored on this phone, in this browser. Save a backup file now and then; clearing Chrome's site data erases the log.</p>
+    <div class="tools">
+      <button class="ghost" id="exportBtn">Save backup file</button>
+      <button class="ghost" id="importBtn">Restore from backup</button>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+    </div>
+  </section>
+</div>
+
+<div class="dock"><div class="dock-in"><button class="primary" id="openLog">Start a set</button></div></div>
+
+<div class="scrim" id="scrim" hidden>
+  <form class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-top">
+      <strong id="sheetTitle">Start a set</strong>
+      <button type="button" class="iconbtn" id="closeLog" aria-label="Close">&#10005;</button>
+    </div>
+    <label class="field"><span>Exercise</span><select id="fEx"></select></label>
+    <fieldset class="field"><legend>Weight</legend><div class="chips" id="fLoad"></div></fieldset>
+    <p class="hint" id="viewHint"></p>
+    <label class="check"><input type="checkbox" id="fSpeak" checked> Count reps aloud</label>
+    <button class="primary" type="button" id="startCam">Count with camera</button>
+    <button class="secondary" type="button" id="showManual">Enter reps by hand instead</button>
+    <div id="manual" hidden style="display:flex;flex-direction:column;gap:16px">
+      <label class="field"><span>Reps</span>
+        <div class="stepper">
+          <button type="button" id="repMinus" aria-label="One fewer rep">&minus;</button>
+          <input type="number" id="fReps" inputmode="numeric" min="1" max="200" value="10">
+          <button type="button" id="repPlus" aria-label="One more rep">+</button>
+        </div>
+      </label>
+      <fieldset class="field"><legend>How hard was it?</legend><div class="chips" id="fRir"></div></fieldset>
+      <button class="primary" type="submit">Save set</button>
+    </div>
+  </form>
+</div>
+
+<div class="cam" id="cam" hidden>
+  <div class="stage" id="stage">
+    <video id="video" playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <div class="hud-top">
+      <div><strong id="camEx"></strong><span id="camSub"></span></div>
+      <button type="button" id="flipCam">Flip camera</button>
+    </div>
+    <div class="status" id="camStatus">Starting camera…</div>
+    <div class="count" id="camCount">0</div>
+  </div>
+  <div class="result" id="result" hidden>
+    <div class="line"><strong id="resTitle">Set saved</strong><span class="rest" id="restClock">Rest 0:00</span></div>
+    <div class="stepper">
+      <button type="button" id="resMinus" aria-label="One fewer rep">&minus;</button>
+      <input type="number" id="resReps" inputmode="numeric" min="1" max="200" aria-label="Reps in the saved set">
+      <button type="button" id="resPlus" aria-label="One more rep">+</button>
+    </div>
+    <div class="chips" id="resRir"></div>
+    <p class="hint" id="resHint"></p>
+  </div>
+  <div class="cam-bar" id="barCounting">
+    <button type="button" id="camCancel">Cancel</button>
+    <button type="button" class="go" id="camDone">Done</button>
+  </div>
+  <div class="cam-bar" id="barResult" hidden>
+    <button type="button" id="camFinish">Finish</button>
+    <button type="button" id="camChange">Change exercise</button>
+    <button type="button" class="go" id="camNext">Next set</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden role="status"><span id="toastMsg"></span><button id="toastUndo" hidden>Undo</button></div>
+
+<script type="module">
+import { MUSCLES, EXERCISES, EFFORTS, SIGNALS, sideSignal, makeCounter, estimateEffort, setCredits, totals } from "./core.js";
+
+const M = Object.fromEntries(MUSCLES.map(m => [m.id, m]));
+const E = Object.fromEntries(EXERCISES.map(e => [e.id, e]));
+const EF = Object.fromEntries(EFFORTS.map(e => [e.v, e]));
+const LOADS = [ { v: 0, label: "Body" }, { v: 5, label: "5 lb" }, { v: 10, label: "10 lb" }, { v: 20, label: "20 lb" }, { v: 35, label: "35 lb" } ];
+const VIEW = { side: "Stand side-on to the phone", front: "Face the phone" };
+const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+
+// ---------- Helpers ----------
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, "0");
+const ymd = d => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+function mondayOf(d) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+const weekKey = d => "w_" + ymd(mondayOf(d));
+const keyDate = k => { const [y, m, d] = k.slice(2).split("-").map(Number); return new Date(y, m - 1, d); };
+const fmt = n => String(Number(n.toFixed(2)));
+const frac = n => n === 0.5 ? "½" : n === 0.25 ? "¼" : fmt(n);
+const loadText = l => l ? l + " lb" : "body weight";
+function stateOf(m, v) { return v >= m.goal ? { cls: "is-good", label: "On target" } : v >= m.min ? { cls: "is-mid", label: "Enough to maintain" } : { cls: "is-low", label: "Not enough yet" }; }
+function el(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+
+// ---------- State (kept in this browser) ----------
+const LS = "volume-ledger-v1";
+let weeks = {}, last = {}, prefs = { speak: true, facing: "user" };
+let viewing = weekKey(new Date());
+try { const raw = JSON.parse(localStorage.getItem(LS) || "{}"); weeks = raw.weeks || {}; last = raw.last || {}; prefs = Object.assign(prefs, raw.prefs || {}); } catch (e) {}
+function save() { try { localStorage.setItem(LS, JSON.stringify({ weeks, last, prefs })); } catch (e) { toast("Couldn't save to this phone's storage."); } }
+function findSet(id) { for (const k in weeks) { const i = weeks[k].sets.findIndex(s => s.id === id); if (i >= 0) return { k, i, s: weeks[k].sets[i] }; } return null; }
+function addSet(s) { const k = weekKey(new Date(s.t)); (weeks[k] ||= { sets: [] }).sets.push(s); last[s.ex] = { reps: s.reps, load: s.load, rir: s.rir }; save(); viewing = k; render(); }
+function removeSet(id) {
+  const f = findSet(id); if (!f) return;
+  weeks[f.k].sets.splice(f.i, 1); save(); render();
+  toast("Set deleted", () => { weeks[f.k].sets.push(f.s); save(); render(); });
+}
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+// ---------- Suggestions ----------
+function suggestions() {
+  const now = new Date(), cur = weekKey(now);
+  const t = totals((weeks[cur] || { sets: [] }).sets);
+  const y = ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+  const yTot = totals(Object.values(weeks).flatMap(w => w.sets).filter(s => ymd(new Date(s.t)) === y));
+  const resting = new Set(MUSCLES.filter(m => yTot[m.id] >= 4).map(m => m.id));
+  const need = {}; for (const m of MUSCLES) need[m.id] = Math.max(0, m.goal - t[m.id]) / m.goal * m.pri;
+  const scored = EXERCISES.map(ex => {
+    const prim = Object.keys(ex.c).find(m => ex.c[m] === 1);
+    if (resting.has(prim)) return null;
+    let score = 0; for (const m in ex.c) if (!resting.has(m)) score += ex.c[m] * need[m];
+    return { ex, prim, score };
+  }).filter(x => x && x.score > 0.01).sort((a, b) => b.score - a.score);
+  const picks = [], seen = new Set();
+  for (const s of scored) { if (seen.has(s.prim)) continue; seen.add(s.prim); picks.push(s); if (picks.length === 3) break; }
+  return { picks, t, resting };
+}
+
+// ---------- Main screen ----------
+function render() {
+  const cur = weekKey(new Date()), isCur = viewing === cur;
+  const start = keyDate(viewing), end = new Date(start); end.setDate(end.getDate() + 6);
+  const md = d => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  $("weekTitle").textContent = isCur ? "This week" : md(start) + " – " + md(end);
+  $("nextWeek").disabled = isCur;
+  const sets = (weeks[viewing] || { sets: [] }).sets, t = totals(sets);
+  const onTarget = MUSCLES.filter(m => t[m.id] >= m.goal).length, held = MUSCLES.filter(m => t[m.id] >= m.min).length;
+  $("summary").textContent = sets.length
+    ? onTarget + " of " + MUSCLES.length + " body parts on target, " + held + " at or above the maintain line. " + sets.length + (sets.length === 1 ? " set" : " sets") + " logged."
+    : (isCur ? "No sets yet this week. Start a set below, prop the phone where it can see you, and the bars fill as you train." : "No sets were logged this week.");
+
+  const L = $("ledger"); L.textContent = "";
+  for (const m of MUSCLES) {
+    const v = t[m.id], st = stateOf(m, v), pct = Math.round(v / m.goal * 100);
+    const row = el("div", "row " + st.cls);
+    const name = el("div", "name", m.name); if (m.note) name.appendChild(el("small", "", m.note));
+    const val = el("div", "val num"); val.appendChild(el("b", "", pct + "%")); val.appendChild(document.createTextNode(fmt(v) + " of " + m.goal));
+    const bar = el("div", "bar"), fill = el("i"), tick = el("s"); fill.style.width = Math.min(100, pct) + "%"; tick.style.left = (m.min / m.goal * 100) + "%";
+    bar.append(fill, tick); bar.setAttribute("role", "img"); bar.setAttribute("aria-label", m.name + " " + pct + " percent of weekly goal");
+    row.append(name, val, bar, el("div", "state", st.label)); L.appendChild(row);
+  }
+
+  const N = $("next"); N.textContent = "";
+  const sg = suggestions();
+  if (!sg.picks.length) N.appendChild(el("p", "empty", sg.resting.size ? "Everything still short was worked hard yesterday. Rest today or train something already on target." : "Every body part is on target for the week."));
+  for (const p of sg.picks) {
+    const b = el("button"); b.type = "button"; b.appendChild(el("strong", "", p.ex.name));
+    const why = Object.keys(p.ex.c).filter(m => p.ex.c[m] >= 0.5 && sg.t[m] < M[m].goal).map(m => M[m].name + " at " + Math.round(sg.t[m] / M[m].goal * 100) + "%").join(", ");
+    b.appendChild(el("span", "num", why)); b.appendChild(el("em", "", "Start"));
+    b.addEventListener("click", () => openSheet(p.ex.id)); N.appendChild(b);
+  }
+
+  const G = $("log"); G.textContent = "";
+  if (!sets.length) G.appendChild(el("p", "empty", "Each set appears here with its reps, weight and effort."));
+  const byDay = {}; for (const s of sets) (byDay[ymd(new Date(s.t))] ||= []).push(s);
+  for (const day of Object.keys(byDay).sort().reverse()) {
+    const box = el("div", "day"), [yy, mm, dd] = day.split("-").map(Number);
+    box.appendChild(el("h3", "", new Date(yy, mm - 1, dd).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })));
+    for (const s of byDay[day].slice().sort((a, b) => b.t - a.t)) {
+      const r = el("div", "set"), ex = E[s.ex];
+      r.appendChild(el("div", "ex", ex ? ex.name : s.ex));
+      const cr = setCredits(s), parts = Object.keys(cr).filter(m => cr[m] > 0).map(m => M[m].name + " " + frac(cr[m]));
+      r.appendChild(el("div", "meta", (EF[s.rir] || EF.easy).label + (s.src === "cam" ? " · camera" : "") + (parts.length ? " · " + parts.join(", ") : " · not counted")));
+      r.appendChild(el("div", "qty num", s.reps + " × " + (s.load ? s.load + " lb" : "body")));
+      const d = el("button", "del", "✕"); d.type = "button"; d.setAttribute("aria-label", "Delete this set"); d.addEventListener("click", () => removeSet(s.id)); r.appendChild(d);
+      box.appendChild(r);
+    }
+    G.appendChild(box);
+  }
+}
+
+// ---------- Start-a-set sheet ----------
+function chipGroup(host, name, items, prefix) {
+  for (const it of items) { const lab = el("label"), i = el("input"); i.type = "radio"; i.name = name; i.value = it.v; i.id = prefix + it.v; lab.append(i, document.createTextNode(it.label)); if (it.sub) lab.appendChild(el("small", "", it.sub)); host.appendChild(lab); }
+}
+const radio = name => (document.querySelector('input[name="' + name + '"]:checked') || {}).value;
+function setRadio(name, v) { const i = document.querySelector('input[name="' + name + '"][value="' + v + '"]'); if (i) i.checked = true; }
+function buildForm() {
+  const sel = $("fEx"), groups = {};
+  for (const ex of EXERCISES) { if (!groups[ex.group]) { groups[ex.group] = document.createElement("optgroup"); groups[ex.group].label = ex.group; sel.appendChild(groups[ex.group]); } const o = el("option", "", ex.name); o.value = ex.id; groups[ex.group].appendChild(o); }
+  chipGroup($("fLoad"), "load", LOADS, "load-");
+  chipGroup($("fRir"), "rir", EFFORTS, "rir-");
+  chipGroup($("resRir"), "resrir", EFFORTS, "resrir-");
+  $("fSpeak").checked = prefs.speak;
+}
+let lastEx = null;
+function loadDefaults() {
+  const ex = E[$("fEx").value], l = last[ex.id] || {};
+  $("fReps").value = l.reps || 10; setRadio("load", l.load != null ? l.load : ex.load); setRadio("rir", l.rir || "hard");
+  $("viewHint").textContent = VIEW[ex.view] + ", about 6–8 feet back, with your whole body in the picture.";
+}
+function openSheet(exId) { if (exId) $("fEx").value = exId; else if (lastEx && E[lastEx]) $("fEx").value = lastEx; loadDefaults(); $("manual").hidden = true; $("showManual").hidden = false; $("scrim").hidden = false; }
+function closeSheet() { $("scrim").hidden = true; }
+let toastTimer = null, undoFn = null;
+function toast(msg, undo) { $("toastMsg").textContent = msg; undoFn = undo || null; $("toastUndo").hidden = !undo; $("toast").hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $("toast").hidden = true; }, 5000); }
+
+// ---------- Camera counting ----------
+let landmarker = null, stream = null, wake = null, raf = 0;
+let phase = "off";            // off | loading | countdown | counting | result
+let cam = null;               // { ex, load, counters: {L, R}, lastSeen, goAt, lastInfer, said }
+let savedId = null, restFrom = 0, restTimer = 0;
+
+function say(text) { if (!prefs.speak || !("speechSynthesis" in window)) return; try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(String(text)); u.rate = 1.1; speechSynthesis.speak(u); } catch (e) {} }
+function camStatus(t) { $("camStatus").textContent = t; }
+
+async function ensureModel() {
+  if (landmarker) return;
+  if (window.__fakePose) { landmarker = window.__fakePose; return; }   // test hook: lets the counting loop be exercised without a camera model
+  const { PoseLandmarker, FilesetResolver } = await import("./lib/vision_bundle.mjs");
+  const files = await FilesetResolver.forVisionTasks("./lib/wasm");
+  const make = delegate => PoseLandmarker.createFromOptions(files, { baseOptions: { modelAssetPath: MODEL, delegate }, runningMode: "VIDEO", numPoses: 1 });
+  try { landmarker = await make("GPU"); } catch (e) { landmarker = await make("CPU"); }
+}
+async function openCamera() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: prefs.facing, width: { ideal: 640 }, height: { ideal: 480 } } });
+  const v = $("video"); v.srcObject = stream; await v.play();
+  $("stage").classList.toggle("mirror", prefs.facing === "user");
+  const c = $("overlay"); c.width = v.videoWidth; c.height = v.videoHeight;
+}
+async function startCamera(exId, load) {
+  const ex = E[exId];
+  cam = { ex, load, counters: null, lastSeen: 0, goAt: 0, lastInfer: 0, said: 0 };
+  $("camEx").textContent = ex.name; $("camSub").textContent = loadText(load) + " · " + VIEW[ex.view].toLowerCase();
+  $("cam").hidden = false; showCounting(); phase = "loading"; camStatus("Starting camera…"); $("camCount").textContent = "0";
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error("no-camera-api");
+    await openCamera();
+    camStatus("Loading body tracking… (first time takes a few seconds)");
+    await ensureModel();
+  } catch (e) {
+    stopCamera();
+    toast(e && e.name === "NotAllowedError" ? "Camera permission was declined. Allow the camera for this site in Chrome, or enter reps by hand."
+      : e && e.message === "no-camera-api" ? "This browser can't open the camera here. Enter reps by hand."
+      : "Couldn't start camera tracking. Check your connection and try again, or enter reps by hand.");
+    return;
+  }
+  try { wake = await navigator.wakeLock.request("screen"); } catch (e) {}
+  beginSet();
+  cancelAnimationFrame(raf); raf = requestAnimationFrame(loop);
+}
+function beginSet() {
+  const amp = SIGNALS[cam.ex.sig].minAmp;
+  cam.counters = { L: makeCounter(amp), R: makeCounter(amp) };
+  cam.goAt = performance.now() + 5000; cam.said = 0; cam.lastSeen = 0; cam.count = 0;
+  phase = "countdown"; showCounting(); $("camCount").textContent = "0"; say("Get set");
+}
+function showCounting() { $("result").hidden = true; $("barResult").hidden = true; $("barCounting").hidden = false; $("camCount").hidden = false; $("camStatus").hidden = false; clearInterval(restTimer); }
+const BONES = [[11, 13], [13, 15], [12, 14], [14, 16], [11, 12], [11, 23], [12, 24], [23, 24], [23, 25], [25, 27], [24, 26], [26, 28]];
+function draw(lm) {
+  const c = $("overlay"), g = c.getContext("2d"); g.clearRect(0, 0, c.width, c.height);
+  if (!lm) return;
+  g.lineWidth = Math.max(3, c.width / 160); g.strokeStyle = "#86A9EA"; g.fillStyle = "#F2F5F8"; g.lineCap = "round";
+  for (const [a, b] of BONES) { const p = lm[a], q = lm[b]; if ((p.visibility ?? 1) < 0.5 || (q.visibility ?? 1) < 0.5) continue; g.beginPath(); g.moveTo(p.x * c.width, p.y * c.height); g.lineTo(q.x * c.width, q.y * c.height); g.stroke(); }
+  for (const i of new Set(BONES.flat())) { const p = lm[i]; if ((p.visibility ?? 1) < 0.5) continue; g.beginPath(); g.arc(p.x * c.width, p.y * c.height, g.lineWidth, 0, 6.3); g.fill(); }
+}
+function loop(now) {
+  if (phase === "off") return;
+  raf = requestAnimationFrame(loop);
+  if (phase === "result" || phase === "loading") return;
+  if (now - cam.lastInfer < 55) return;       // about 18 frames a second keeps the phone cool
+  cam.lastInfer = now;
+  const v = $("video"); if (v.readyState < 2) return;
+  let lm = null;
+  try { const r = landmarker.detectForVideo(v, now); lm = r.landmarks && r.landmarks[0]; } catch (e) { return; }
+  draw(lm);
+  const sL = lm ? sideSignal(lm, cam.ex.sig, "L") : null, sR = lm ? sideSignal(lm, cam.ex.sig, "R") : null;
+  const seen = sL !== null || sR !== null; if (seen) cam.lastSeen = now;
+
+  if (phase === "countdown") {
+    const left = Math.ceil((cam.goAt - now) / 1000);
+    if (left > 0) { camStatus(seen ? "Get into position… " + left : "I can't see the joints I need. Step back so your whole body is in the picture. " + left); return; }
+    phase = "counting"; cam.startAt = now; say("Go");
+  }
+  if (sL !== null) cam.counters.L.push(sL, now);
+  if (sR !== null) cam.counters.R.push(sR, now);
+  const n = Math.max(cam.counters.L.count, cam.counters.R.count);
+  if (n !== cam.count) { cam.count = n; $("camCount").textContent = n; if (n > cam.said) { cam.said = n; say(n); } }
+  camStatus(seen ? (n ? "Counting" : "Go when ready") : "Lost sight of you. Step back into the picture.");
+  // The set ends by itself after 6 seconds without a rep, or 6 seconds out of view.
+  if (n >= 1) {
+    const lastMove = Math.max(cam.counters.L.lastMoveT || 0, cam.counters.R.lastMoveT || 0);
+    if (now - lastMove > 6000 || now - cam.lastSeen > 6000) finishSet();
+  } else if (now - cam.startAt > 90000) { stopCamera(); toast("No reps seen in 90 seconds, so nothing was saved."); }
+}
+function finishSet() {
+  if (phase !== "counting" && phase !== "countdown") return;
+  const cs = cam.counters; cs.L.flush(); cs.R.flush();
+  const best = cs.R.count > cs.L.count ? cs.R : cs.L, reps = best.count;
+  if (!reps) { stopCamera(); toast("No reps were counted, so nothing was saved."); return; }
+  const est = estimateEffort(best.reps), prev = (last[cam.ex.id] || {}).rir;
+  const rir = est ? est.effort : (prev || "hard");
+  const s = { id: newId(), t: Date.now(), ex: cam.ex.id, reps, load: cam.load, rir, src: "cam" };
+  addSet(s); savedId = s.id; lastEx = s.ex;
+  phase = "result";
+  $("camCount").hidden = true; $("camStatus").hidden = true; $("barCounting").hidden = true; $("barResult").hidden = false; $("result").hidden = false;
+  $("resTitle").textContent = "Set saved: " + cam.ex.name;
+  $("resReps").value = reps; setRadio("resrir", rir);
+  $("resHint").textContent = est
+    ? "Effort is my estimate: your last reps took " + Math.round((est.ratio - 1) * 100) + "% longer than your early ones. Tap to correct it. The camera can't tell a hard set from failure."
+    : "Too few reps to judge effort from speed, so I used " + (prev ? "your last answer for this exercise" : "Hard") + ". Tap to correct it.";
+  say("Set saved. " + reps + (reps === 1 ? " rep" : " reps"));
+  restFrom = Date.now(); clearInterval(restTimer);
+  const tick = () => { const sec = Math.floor((Date.now() - restFrom) / 1000); $("restClock").textContent = "Rest " + Math.floor(sec / 60) + ":" + pad(sec % 60); };
+  tick(); restTimer = setInterval(tick, 1000);
+}
+function editSaved(patch) { const f = findSet(savedId); if (!f) return; Object.assign(f.s, patch); last[f.s.ex] = { reps: f.s.reps, load: f.s.load, rir: f.s.rir }; save(); render(); }
+function stopCamera() {
+  phase = "off"; cancelAnimationFrame(raf); clearInterval(restTimer);
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  try { if (wake) wake.release(); } catch (e) {} wake = null;
+  try { speechSynthesis.cancel(); } catch (e) {}
+  $("cam").hidden = true;
+}
+
+// ---------- Backup ----------
+function exportData() {
+  const blob = new Blob([JSON.stringify({ app: "volume-ledger", version: 1, weeks, last }, null, 1)], { type: "application/json" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "volume-ledger-" + ymd(new Date()) + ".json";
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+async function importData(file) {
+  try {
+    const d = JSON.parse(await file.text()); if (!d || typeof d.weeks !== "object") throw 0;
+    let added = 0;
+    for (const k in d.weeks) { if (!/^w_\d{4}-\d{2}-\d{2}$/.test(k) || !Array.isArray(d.weeks[k].sets)) continue;
+      const have = new Set(((weeks[k] ||= { sets: [] }).sets).map(s => s.id));
+      for (const s of d.weeks[k].sets) if (s && s.id && E[s.ex] && !have.has(s.id)) { weeks[k].sets.push({ id: String(s.id), t: Number(s.t), ex: s.ex, reps: Number(s.reps) || 1, load: Number(s.load) || 0, rir: EF[s.rir] ? s.rir : "hard", src: s.src === "cam" ? "cam" : undefined }); added++; } }
+    save(); render(); toast(added ? added + " sets restored from the backup." : "Nothing new in that backup.");
+  } catch (e) { toast("That file isn't a Volume Ledger backup."); }
+}
+
+// ---------- Wiring ----------
+buildForm();
+$("openLog").addEventListener("click", () => openSheet());
+$("closeLog").addEventListener("click", closeSheet);
+$("scrim").addEventListener("click", e => { if (e.target === $("scrim")) closeSheet(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("scrim").hidden) closeSheet(); });
+$("fEx").addEventListener("change", loadDefaults);
+$("fSpeak").addEventListener("change", () => { prefs.speak = $("fSpeak").checked; save(); });
+$("showManual").addEventListener("click", () => { $("manual").hidden = false; $("showManual").hidden = true; });
+$("repMinus").addEventListener("click", () => { $("fReps").value = Math.max(1, (parseInt($("fReps").value, 10) || 1) - 1); });
+$("repPlus").addEventListener("click", () => { $("fReps").value = Math.min(200, (parseInt($("fReps").value, 10) || 0) + 1); });
+$("startCam").addEventListener("click", () => { const ex = $("fEx").value, load = Number(radio("load") || 0); closeSheet(); startCamera(ex, load); });
+$("sheet").addEventListener("submit", e => {
+  e.preventDefault();
+  const reps = parseInt($("fReps").value, 10);
+  if (!reps || reps < 1) { toast("Enter how many reps you did."); return; }
+  const s = { id: newId(), t: Date.now(), ex: $("fEx").value, reps, load: Number(radio("load") || 0), rir: radio("rir") || "hard" };
+  lastEx = s.ex; addSet(s); toast(E[s.ex].name + ": set saved");
+});
+$("camCancel").addEventListener("click", () => { stopCamera(); toast("Set cancelled. Nothing was saved."); });
+$("camDone").addEventListener("click", () => { if (phase === "counting" || phase === "countdown") finishSet(); });
+$("camNext").addEventListener("click", () => { if (phase === "result") beginSet(); });
+$("camFinish").addEventListener("click", stopCamera);
+$("camChange").addEventListener("click", () => { stopCamera(); openSheet(); });
+$("flipCam").addEventListener("click", async () => { prefs.facing = prefs.facing === "user" ? "environment" : "user"; save(); try { await openCamera(); } catch (e) { toast("Couldn't switch cameras."); } });
+$("resMinus").addEventListener("click", () => { const v = Math.max(1, (parseInt($("resReps").value, 10) || 1) - 1); $("resReps").value = v; editSaved({ reps: v }); });
+$("resPlus").addEventListener("click", () => { const v = Math.min(200, (parseInt($("resReps").value, 10) || 0) + 1); $("resReps").value = v; editSaved({ reps: v }); });
+$("resReps").addEventListener("change", () => { const v = parseInt($("resReps").value, 10); if (v >= 1) editSaved({ reps: v }); });
+$("resRir").addEventListener("change", () => { editSaved({ rir: radio("resrir") }); });
+$("toastUndo").addEventListener("click", () => { if (undoFn) undoFn(); undoFn = null; $("toast").hidden = true; });
+$("prevWeek").addEventListener("click", () => { const d = keyDate(viewing); d.setDate(d.getDate() - 7); viewing = weekKey(d); render(); });
+$("nextWeek").addEventListener("click", () => { const d = keyDate(viewing); d.setDate(d.getDate() + 7); viewing = weekKey(d); render(); });
+$("exportBtn").addEventListener("click", exportData);
+$("importBtn").addEventListener("click", () => $("importFile").click());
+$("importFile").addEventListener("change", e => { if (e.target.files[0]) importData(e.target.files[0]); e.target.value = ""; });
+document.addEventListener("visibilitychange", async () => { if (document.visibilityState === "visible" && phase !== "off" && !wake) { try { wake = await navigator.wakeLock.request("screen"); } catch (e) {} } else if (document.visibilityState !== "visible") wake = null; });
+render();
+</script>
+</body>
+</html>
